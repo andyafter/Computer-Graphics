@@ -1,0 +1,145 @@
+\documentclass[serif ,mathserif ,professionalfont,hyperref={pdfpagelabels=false}]{beamer}
+%\usepackage{lmodern}
+\usepackage{exscale}
+\usepackage{amsmath}
+\usepackage{graphicx}
+%\usepackage{mathptmx} % seems something to do with the font
+\usepackage{helvet}
+\usepackage{tcolorbox}
+\usepackage{textpos}
+\usepackage{xargs}
+\usepackage{tikz}
+\usepackage{amssymb}
+\usepackage[]{algorithm2e}
+\usepackage{pxfonts}
+\usepackage{eulervm}
+\usepackage[miktex]{gnuplottex} % for MiKTeX,`pdflatex -shell-escape`
+                                % enabled
+\usepackage[export]{adjustbox}
+\usepackage{cite}
+%\usepackage{gnuplottex} I have used this line to compile on TeXLive 2013
+%\usepackage[pdftex,dvipsnames]{xcolor}
+%\usepackage[colorinlistoftodos,prependcaption,textsize=tiny]{todonotes}
+\usepackage{mathtools}
+\DeclareMathOperator*{\argmin}{argmin}
+\DeclareMathOperator*{\argmax}{argmax}
+
+\renewcommand{\familydefault}{helvetica}
+%\renewcommand{\labelitemi}{$\bluesquare$}
+\newcommand{\labelitemi}{\textbf{\ding{192}}}
+\newcommand{\localtextbulletone}{\textcolor{gray}{\raisebox{.45ex}{\rule{.6ex}{.6ex}}}}
+\newcommand\norm[1]{\left\lVert#1\right\rVert}
+\renewcommand{\labelitemi}{\localtextbulletone}
+%\renewcommand\mathfamilydefault{\mathnormal}
+%\renewcommand{\theequation}{\thechapter--\arabic{equation}} % for
+                                % equation number style
+
+
+
+\DeclareMathOperator{\dom}{dom}
+\def\gdw{\mathrel{{>}\mkern-13mu{<}}}
+
+\setbeamertemplate{itemize items}[square]
+
+
+\usetheme{Frankfurt}
+\setbeamercolor{section in head/foot}{fg=white, bg=blue!20!black!90}
+
+
+%% commands definitions for
+\newcommand\mynew{andyandyandy}
+
+%% end of the definition of commands
+
+%%% block definition
+\newenvironment<>{redblock}[1]{%
+  \setbeamercolor{block title}{fg=white,bg=red!75!black!65}%
+  \setbeamercolor{block body}{fg=red!40!black!70,bg=red!60!black!20}%
+
+  \begin{block}#2{#1}}{\end{block}}
+\newenvironment<>{blueblock}[1]{%
+  \setbeamercolor{block title}{fg=white,bg=blue!75!black!65}%
+  \setbeamercolor{block body}{fg=black,bg=blue!60!black!20}%
+  \begin{block}#2{#1}}{\end{block}}
+
+\newenvironment<>{greyblock}[1]{%
+  \setbeamercolor{block title}{fg=white,bg=black!75}%
+  \setbeamercolor{block body}{fg=black,bg=black!40}%
+  \begin{block}#2{#1}}{\end{block}}
+
+\newenvironment<>{greenblock}[1]{%
+  \setbeamercolor{block title}{fg=white,bg=green!75!black!65}%
+  \setbeamercolor{block body}{fg=black,bg=green!60!black!20}%
+  \begin{block}#2{#1}}{\end{block}}
+%%% Block definition
+
+
+% for the note style
+% \newcommandx{\unsure}[2][1=]{\todo[linecolor=red,backgroundcolor=red!25,bordercolor=red,#1]{#2}}
+% \newcommandx{\change}[2][1=]{\todo[linecolor=blue,backgroundcolor=blue!25,bordercolor=blue,#1]{#2}}
+% \newcommandx{\info}[2][1=]{\todo[linecolor=OliveGreen,backgroundcolor=OliveGreen!25,bordercolor=OliveGreen,#1]{#2}}
+% \newcommandx{\improvement}[2][1=]{\todo[linecolor=Plum,backgroundcolor=Plum!25,bordercolor=Plum,#1]{#2}}
+% \newcommandx{\thiswillnotshow}[2][1=]{\todo[disable,#1]{#2}}
+
+%% configuration for the slids style
+\makeatletter
+\setbeamertemplate{footline}
+{
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1.6ex,center]{author in head/foot}%
+      \usebeamerfont{author in
+        head/foot}%
+      \insertshortauthor\hspace{1em}\beamer@ifempty{Advanced
+        Algorithms}{}{Advanced
+        Algorithms}
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1.6ex,center]{title in head/foot}%
+      \usebeamerfont{title in head/foot}\insertshorttitle
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.333333\paperwidth,ht=2.25ex,dp=1.6ex,right]{date in head/foot}%
+      \usebeamerfont{date in head/foot}\insertshortdate{}\hspace*{2em}
+      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}
+    \end{beamercolorbox}}%
+  \vskip0pt%
+}
+\makeatother
+
+\author[\parbox{.2\paperwidth}{}]{\bf \large Hu SiXing, Hakki Can Karaimer, Pan
+  An,\\  Philipp Keck, Taehoon Kim}
+\institute{National University of Singapore}
+\title{Min-Cuts Algorithms }
+
+%% end of configuration
+
+
+
+
+% \title{Convex Optimization}
+% \author{Hu SiXing, Hakki Can Karaimer, Pan An, Philipp Keck}
+%\date{Jan 20th, 2016}
+\date{\today}
+\setbeamertemplate{bibliography item}[triangle]
+\begin{document}
+
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+
+
+\section{References}
+\begin{frame}
+  \frametitle{References}
+\tiny
+
+%\input{gb_basic.tex}
+%\nocite{*}
+%\bibliographystyle{apalike}
+%\bibliography{references}
+
+
+\end{frame}
+
+\end{document}
