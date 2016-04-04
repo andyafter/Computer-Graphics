@@ -2,17 +2,23 @@
  "main"
  (lambda ()
    (TeX-add-to-alist 'LaTeX-provided-class-options
-                     '(("article" "dvips" "12pt")))
-   (TeX-add-to-alist 'LaTeX-provided-package-options
-                     '(("graphicx" "pdftex")))
+                     '(("article" "12pt")))
    (TeX-run-style-hooks
     "latex2e"
     "article"
     "art12"
+    "amscd"
+    "amsmath"
+    "amssymb"
+    "amsthm"
+    "cite"
+    "epsfig"
+    "verbatim"
     "graphicx"
-    "url")
+    "color")
    (LaTeX-add-labels
-    "m42")
-   (LaTeX-add-bibitems
-    "gonzalez2012")))
+    "fig:dipole"
+    "fig:directional")
+   (LaTeX-add-bibliographies
+    "papers")))
 

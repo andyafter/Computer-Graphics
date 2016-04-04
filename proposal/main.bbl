@@ -1,0 +1,25 @@
+\begin{thebibliography}{1}
+
+\bibitem{direction}
+Jeppe~Revall Frisvad, Toshiya Hachisuka, and Thomas~Kim Kjeldsen.
+\newblock Directional dipole model for subsurface scattering.
+\newblock {\em ACM Transactions on Graphics (TOG)}, 34(1):5, 2014.
+
+\bibitem{materials}
+Ioannis Gkioulekas, Shuang Zhao, Kavita Bala, Todd Zickler, and Anat Levin.
+\newblock Inverse volume rendering with material dictionaries: Supplementary
+  material.
+
+\bibitem{jensen}
+Henrik~Wann Jensen, Stephen~R Marschner, Marc Levoy, and Pat Hanrahan.
+\newblock A practical model for subsurface light transport.
+\newblock In {\em Proceedings of the 28th annual conference on Computer
+  graphics and interactive techniques}, pages 511--518. ACM, 2001.
+
+\bibitem{brdf}
+FE~Nicodemus, JC~Richmond, JJ~Hsia, IW~Ginsberg, and T~Limperis.
+\newblock Geometric considerations and nomenclature for reflectance, volume 161
+  of monograph.
+\newblock {\em National Bureau of Standards (US)}, 1977.
+
+\end{thebibliography}
