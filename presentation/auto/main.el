@@ -35,5 +35,5 @@
     "mynew"
     "gdw")
    (LaTeX-add-bibliographies
-    "references")))
+    "papers")))
 

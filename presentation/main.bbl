@@ -1,25 +1,32 @@
-\begin{thebibliography}{}
+\begin{thebibliography}{1}
 
-\bibitem[Frisvad et~al., 2014]{direction}
-Frisvad, J.~R., Hachisuka, T., and Kjeldsen, T.~K. (2014).
+\bibitem{farrell1992diffusion}
+Thomas~J Farrell, Michael~S Patterson, and Brian Wilson.
+\newblock A diffusion theory model of spatially resolved, steady-state diffuse
+  reflectance for the noninvasive determination of tissue optical properties
+  invivo.
+\newblock {\em Medical physics}, 19(4):879--888, 1992.
+
+\bibitem{direction}
+Jeppe~Revall Frisvad, Toshiya Hachisuka, and Thomas~Kim Kjeldsen.
 \newblock Directional dipole model for subsurface scattering.
-\newblock {\em ACM Transactions on Graphics (TOG)}, 34(1):5.
+\newblock {\em ACM Transactions on Graphics (TOG)}, 34(1):5, 2014.
 
-\bibitem[Gkioulekas et~al., ]{materials}
-Gkioulekas, I., Zhao, S., Bala, K., Zickler, T., and Levin, A.
+\bibitem{materials}
+Ioannis Gkioulekas, Shuang Zhao, Kavita Bala, Todd Zickler, and Anat Levin.
 \newblock Inverse volume rendering with material dictionaries: Supplementary
   material.
 
-\bibitem[Jensen et~al., 2001]{jensen}
-Jensen, H.~W., Marschner, S.~R., Levoy, M., and Hanrahan, P. (2001).
+\bibitem{jensen}
+Henrik~Wann Jensen, Stephen~R Marschner, Marc Levoy, and Pat Hanrahan.
 \newblock A practical model for subsurface light transport.
 \newblock In {\em Proceedings of the 28th annual conference on Computer
-  graphics and interactive techniques}, pages 511--518. ACM.
+  graphics and interactive techniques}, pages 511--518. ACM, 2001.
 
-\bibitem[Nicodemus et~al., 1977]{brdf}
-Nicodemus, F., Richmond, J., Hsia, J., Ginsberg, I., and Limperis, T. (1977).
+\bibitem{brdf}
+FE~Nicodemus, JC~Richmond, JJ~Hsia, IW~Ginsberg, and T~Limperis.
 \newblock Geometric considerations and nomenclature for reflectance, volume 161
   of monograph.
-\newblock {\em National Bureau of Standards (US)}.
+\newblock {\em National Bureau of Standards (US)}, 1977.
 
 \end{thebibliography}

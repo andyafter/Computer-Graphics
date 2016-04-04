@@ -45,15 +45,7 @@
 
 
 
-\begin{frame}
-  \frametitle{Dipole Method}
-  \begin{figure}[!ht]
-    \centering
-    \includegraphics[scale=0.15]{di.png}
-    \hspace{4mm}
-    \includegraphics[scale=0.15]{single.png}
-  \end{figure}
-\end{frame}
+
 
 \begin{frame}
   \frametitle{BSSRDF Rendering}
@@ -79,14 +71,87 @@ where $S$ is BSSRDF. $S_d$ and $S^{(1)}$ are the{\bf  diffusion approximation} a
 \end{frame}
 
 
+\begin{frame}
+
+\frametitle{Diffusion Approximation - Dipole}
+  \begin{figure}[!ht]
+    \centering
+    \includegraphics[scale=0.15]{di.png}
+    \hspace{4mm}
+    \includegraphics[scale=0.15]{single.png}
+    \caption{A lot of math in the first graph. Single scattering occurs only when the refracted incoming and outgoing rays intersect.}
+  \end{figure}
+\end{frame}
+
+
+\begin{frame}
+  \frametitle{Photon Mapping - Engineering}
+  \begin{itemize}
+  \item Send photons to field, once intersecting with a surface, the
+    incident(position and direction) will be stored in {\bf photon map};
+  \item Actually 2 photon maps will be generated, one for caustics and
+    one for SSS;
+  \item Depends on the material, the action of the photon is processed
+    with Monte Carlo method;
+\item Then there should be optimizations, cause Monte Carlo is not
+  graphic card friendly.
+  \end{itemize}
+\end{frame}
+
+
+
+
 \section{Directional Dipole}
 
 \begin{frame}
-  \frametitle{Dipole Methods}
-  \begin{figure}[!ht]
+  \frametitle{Directional Dipole Model}
+  \only<1>{\begin{figure}[!ht]
     \centering
     \includegraphics[scale=0.55]{dipoles.png}
   \end{figure}
+}
+\only<2>{
+  \begin{figure}[!ht]
+    \centering
+    \includegraphics[scale=0.26]{direct.png}
+  \end{figure}
+And BSSRDF in this paper is(a lot of math):
+$$
+S_d(\pmb{x_i}, \vec{\omega}; \pmb{x_o}) = S'_d(\pmb{x_o - x_i},
+\vec{\omega}_{12}, d_r) - S'_d(\pmb{x_o - x_v}, \vec{\omega}_{v}, d_v)
+$$
+
+}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Some Comparisons}
+  \only<1>{
+    \begin{figure}[!ht]
+      \centering
+      \includegraphics[scale=0.25]{so.png}
+\hspace{4mm}
+      \includegraphics[scale=0.25]{sn.png}\\
+    \includegraphics[scale=0.5]{bar.png}
+      \caption{Diffuse reflectance due to approximate single
+        scattering. Tested with Standard(left) and Directional Dipole. The
+        incident angle is 45 degrees. }
+    \end{figure}
+  }
+\only<2>{
+\begin{figure}[!ht]
+      \centering
+      \includegraphics[scale=0.35]{stan.png}
+      \caption{Comparison among different methods.}
+    \end{figure}
+}
+\only<3>{
+  \begin{itemize}
+  \item No precomputation required;
+  \item Single scattering does not need Monte Carlo simulation;
+\item This whole thing is just to take the boundary into consideration actually.
+  \end{itemize}
+}
 \end{frame}
 
 \begin{frame}
@@ -95,5 +160,4 @@ where $S$ is BSSRDF. $S_d$ and $S^{(1)}$ are the{\bf  diffusion approximation} a
     \centering
     \includegraphics[scale=0.4]{render.png}
   \end{figure}
-
 \end{frame}
