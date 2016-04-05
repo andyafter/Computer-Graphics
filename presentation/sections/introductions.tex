@@ -115,7 +115,7 @@ where $S$ is BSSRDF. $S_d$ and $S^{(1)}$ are the{\bf  diffusion approximation} a
     \centering
     \includegraphics[scale=0.26]{direct.png}
   \end{figure}
-And BSSRDF in this paper is(a lot of math):
+And Diffusive part of BSSRDF in this paper is(a lot of math):
 $$
 S_d(\pmb{x_i}, \vec{\omega}; \pmb{x_o}) = S'_d(\pmb{x_o - x_i},
 \vec{\omega}_{12}, d_r) - S'_d(\pmb{x_o - x_v}, \vec{\omega}_{v}, d_v)
@@ -156,8 +156,16 @@ $$
 
 \begin{frame}
   \frametitle{Basic Implementation}
-  \begin{figure}[!ht]
+  \only<1>{\begin{figure}[!ht]
     \centering
     \includegraphics[scale=0.4]{render.png}
   \end{figure}
+}
+\only<2>{
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[scale=0.4]{supple.png}
+  \end{figure}
+
+}
 \end{frame}
