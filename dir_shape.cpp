@@ -247,7 +247,7 @@ int main(int argc, char* argv[]) {
 	// save the HDR image
 	float *cf = new float[w * h * 3];
 	for (int i = 0; i < w * h; i++) {
-		for (int j = 0; j < 3; j++) cf[i * 3 + j] = c[i][j];
+            for (int j = 0; j < 3; j++) cf[i * 3 + j] = c[i][j];
 	}
 	FILE *f = fopen("image.pfm", "wb"); 
 	fprintf(f, "PF\n%d %d\n%6.6f\n", w, h, -1.0);

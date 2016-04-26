@@ -1,7 +1,37 @@
-#+TITLE: Directional Dipole Model for Subsurface Scattering
-#+AUTHOR: Pan An (A0134556A)
+% Created 2016-04-27 Wed 04:09
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{fixltx2e}
+\usepackage{graphicx}
+\usepackage{grffile}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{textcomp}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\author{Pan An (A0134556A)}
+\date{\today}
+\title{Directional Dipole Model for Subsurface Scattering}
+\hypersetup{
+ pdfauthor={Pan An (A0134556A)},
+ pdftitle={Directional Dipole Model for Subsurface Scattering},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 24.5.1 (Org mode 8.3.4)}, 
+ pdflang={English}}
+\begin{document}
 
-* Introduction
+\maketitle
+\tableofcontents
+
+
+\section{Introduction}
+\label{sec:orgheadline1}
 Jensen et al. proposed a method for rendering the effects of 
 subsurface scattering by using the Bidirectional Surface Scattering
  Reflectance Distribution Function (BSSRDF). 
@@ -24,8 +54,8 @@ the light that refracts through the surface of a translucent material.
 
 This model is as time efficient as
 
-* Related Work
-#+BEGIN_LaTeX
+\section{Related Work}
+\label{sec:orgheadline2}
 Subsurface scattering(SSS), is an optical physics based machanism describing the
 process of light penetrating translucent materials. Different models
 have been proposed in order to produce artifitial images of real life
@@ -42,37 +72,45 @@ series of techniques and algorithms in order to achieve a set of data
 for daily materials such as wine, milk, coffee etc. Based on their
 analysis we are able to achieve a better result in multimedia
 rendering.
-#+END_LaTeX
 
-* Platform and Frameworks
+\section{Platform and Frameworks}
+\label{sec:orgheadline3}
 
 My code is running on my personal computer, the specifications is listed:
-|----------+--------+------------|
-|----------+--------+------------|
-| Hardware | Params | Additional |
-|----------+--------+------------|
-| CPU      | i7     |            |
-| GPU      | NVIDIA | GTX 780m   |
-| RAM      | 16GB   |            |
-| DRAM     | 3GB    |            |
-|----------+--------+------------|
+\begin{center}
+\begin{tabular}{lll}
+\hline
+\hline
+Hardware & Params & Additional\\
+\hline
+CPU & i7 & \\
+GPU & NVIDIA & GTX 780m\\
+RAM & 16GB & \\
+DRAM & 3GB & \\
+\hline
+\end{tabular}
+\end{center}
 
-Upenn(University of Pennsylvania) has open sourced one of their [[https://cis565-fall-2015.github.io/][framework]]  for 
+Upenn(University of Pennsylvania) has open sourced one of their \href{https://cis565-fall-2015.github.io/}{framework}  for 
 global illumination and rendering. My project is based on the ray tracing framework
 of Upenn.
 
 
-* Algorithm/Implementation
+\section{Algorithm/Implementation}
+\label{sec:orgheadline7}
 
-** Ray Tracer
+\subsection{Ray Tracer}
+\label{sec:orgheadline4}
 Basic ray tracer model is used 
-** Antialising
+\subsection{Antialising}
+\label{sec:orgheadline5}
 
-** 
+\subsection{}
+\label{sec:orgheadline6}
 
-* Results
+\section{Results}
+\label{sec:orgheadline8}
 
-#+BEGIN_LaTeX
 \usepackage{subfig}
 \begin{figure}
 \centering
@@ -98,12 +136,11 @@ Basic ray tracer model is used
 \vspace{-0.2cm}
 \caption{Comparazione dei risultati per patata e succo d'uva.}
 \end{figure}
-#+END_LaTeX
 
 
-* Acknowledgements
+\section{Acknowledgements}
+\label{sec:orgheadline9}
 
-
-* COMMENT References
-Probably will have to do it in latex.
-
+\section{References}
+\label{sec:orgheadline10}
+\end{document}
