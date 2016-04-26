@@ -1,0 +1,26 @@
+#+TITLE: Directional Dipole Model for Subsurface Scattering
+#+AUTHOR: Pan An (A0134556A)
+
+* Introduction
+Jensen et al. proposed a method for rendering the effects of 
+subsurface scattering by using the Bidirectional Surface Scattering
+ Reflectance Distribution Function (BSSRDF). 
+Subsurface scatter- ing is caused when light scatters one
+ to multiple times in a semi-translucent object,
+ and is very important in a variety of different objects, such
+ as milk or jade. Without this effect, rendered objects have a 
+rough and hard computer generated feel to them.
+
+
+This effect is simulated in a ray tracer by casting samples over the surface
+ of the object and into the object. Original BSSRDF renders translucent materials 
+using Monte Carlo ray tracing is computationally expensive 
+due to a large number of subsurface scattering events.
+
+This report is the implementation of an analytical model for subsurface scattering 
+which captures translucency effects that are present in the reference solutions but 
+remain absent with existing models.
+
+* Platform and Frameworks
+
+My code is running on my personal computer, with 
