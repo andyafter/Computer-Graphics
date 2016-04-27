@@ -1,4 +1,4 @@
-% Created 2016-04-27 Wed 04:09
+% Created 2016-04-28 Thu 05:41
 \documentclass[11pt]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -52,7 +52,7 @@ which captures translucency effects that are present in the reference solutions 
 remain absent with existing models. The idea is that a ray source corresponds better to 
 the light that refracts through the surface of a translucent material.
 
-This model is as time efficient as
+
 
 \section{Related Work}
 \label{sec:orgheadline2}
@@ -95,52 +95,95 @@ Upenn(University of Pennsylvania) has open sourced one of their \href{https://ci
 global illumination and rendering. My project is based on the ray tracing framework
 of Upenn.
 
-
-\section{Algorithm/Implementation}
-\label{sec:orgheadline7}
-
-\subsection{Ray Tracer}
+\section{Theory}
 \label{sec:orgheadline4}
-Basic ray tracer model is used 
-\subsection{Antialising}
-\label{sec:orgheadline5}
 
+{\it Subsurface scattering} (SS) is a physical phenomenon that naturally occurs in a wide range of natural materials.
+A BSSRDF is a function $S$ between two points $\mathbf{x}_i$ and $\mathbf{x}_o$ on the surface of an object
+ that describes the repation between an element of emergence radiance $dL(\mathbf{x}_o, \vec{\omega}_o)$ and an 
+element of incident flux $d\Phi(\mathbf{x}_i,\vec{\omega}_i)$:
+
+$$
+S(\mathbf{x}_i, \vec{\omega}_i,\mathbf{x}_o, \vec{\omega}_o) = \frac{dL(\mathbf{x}_o, \vec{\omega}_o)}{d\Phi(\mathbf{x}_i,\vec{\omega}_i)}
+$$
+
+We can then use the BSSRDF in the general formulation of the rendering equation, obtaining:
+\begin{equation}
+\label{eq:eq1}
+\begin{aligned}
+L_o(\mathbf{x}_o, \vec{\omega}_o) &= L_e(\mathbf{x}_o, \vec{\omega}_o) + L_r(\mathbf{x}_o, \vec{\omega}_o) \\
+&= L_e(\mathbf{x}_o, \vec{\omega}_o) + \int_A \int_{2\pi} S(\mathbf{x}_i, \vec{\omega}_i,\mathbf{x}_o, \vec{\omega}_o) L_i(\mathbf{x}_i, \vec{\omega}_i)(\vec{\omega}_i \cdot \vec{n}_i) d\vec{\omega}_i dA
+\end{aligned}
+\end{equation}
+
+Normally the BSSRDF term is split
+ into two or more additional terms  in order to achieve a better approximation of the real world,
+ accounting for single and multiple scattering. In case of multiple scattering, 
+i.e. when light bounces multiple times inside the material, the radiance becomes largely isotropic, and the 
+whole process can be treated as a diffusion.
+
+\vspace{0.6cm}
+{\bf Directional subsurface scattering}
+\vspace{0.6cm}
+
+In Jensen's work, based on approximations of the diffusion equation, the BSSRDF $S$ is modeled as two 
+points lights positioned close to $\mathbf{x}_i$, and depended on the distance between the points and the 
+scattering parameters. In the model we are considering for our thesis,
+ proposed by Firsvad et al., we use a dipole 
+of ray sources in order to better approximate the diffusion equation.
+ The derived BSSRDF describes effectively the diffusion on an infinite medium, 
+so some corrections are necessary in order to take into account the boundary conditions.
+
+\begin{figure}
+\begin{center}
+\includegraphics[scale = 0.6]{./images/comparison.eps} 
+
+\caption{Standard dipole (on the left) versus directional dipole (on the right). }
+\end{center}
+\end{figure}
+
+\vspace{0.6cm}
+{\bf Approximation}
+\vspace{0.6cm}
+
+The general idea of directional dipole method is to integrate Equation \ref{eq:eq1}
+ numerically. In order to do this, we need to make some assumptions. Given an emergence point $\mathbf{x}_o$.
+The diffusive part of the
+proposed directional dipole BSSRDF is as following:
+
+$$
+S_d({\bf x}_i, \vec{\omega_i}; {\bf x}_o)  = S'_d({\bf x}_0 - {\bf x}_i,
+\vec{\omega_{12}}, d_r) - S'_d({\bf x}_0 - {\bf x}_v, \vec{\omega_v}
+d_r)
+$$
+
+where $S'_d$ is the directional version of diffusive approximation.
+
+
+\section{Implementation}
+\label{sec:orgheadline7}
+The implementation of this new method is based on the hardware that has been described before. 
+I used an open source  framework provided by Upenn as the basic structure for displaying, calculation 
+and error controlling. 
+
+In order to build a platform for BSSRDF, I implemented some basic functionalities of ray tracing. As my hardware power was limited, 
+I simplified a couple things in order to test faster. 
+\subsection{Basic Functions}
+\label{sec:orgheadline5}
+Basic ray tracer model is necessary for rendering multiple 
 \subsection{}
 \label{sec:orgheadline6}
 
 \section{Results}
 \label{sec:orgheadline8}
 
-\usepackage{subfig}
-\begin{figure}
-\centering
-\subfloat[{$\ N = 100$}]{
-  \includegraphics[width=0.15 \textwidth]{p100}
-}
-\subfloat[{$\ N = 1000$}]{
-  \includegraphics[width=0.15 \textwidth]{p1000}
-}
-\subfloat[$\ $Reference]{
-  \includegraphics[width=0.15 \textwidth]{p}
-} \\
-\vspace{-0.4cm}
-\subfloat[{$\ N = 100$}]{
-  \includegraphics[width=0.15 \textwidth]{gj100}
-} 
-\subfloat[{$\ N = 1000$}]{
-  \includegraphics[width=0.15 \textwidth]{gj1000}
-} 
-\subfloat[$\ $Reference]{
-  \includegraphics[width=0.15 \textwidth]{gj}
-} 
-\vspace{-0.2cm}
-\caption{Comparazione dei risultati per patata e succo d'uva.}
-\end{figure}
+% you should start doing things from here.
 
 
 \section{Acknowledgements}
 \label{sec:orgheadline9}
-
-\section{References}
-\label{sec:orgheadline10}
+I want to thank professor Yin for offering to help with the hardware. 
+The platform  that I used to develop is provided by CIS565 GPU programming course. 
+Part of my report material comes from DTU github repository, will be adding license information if needed.
+And special thanks to professor WengFai Wong, for the guidance of low level optimizations. 
 \end{document}
