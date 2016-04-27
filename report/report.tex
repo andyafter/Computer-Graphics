@@ -1,4 +1,4 @@
-% Created 2016-04-28 Thu 05:41
+% Created 2016-04-28 Thu 06:31
 \documentclass[11pt]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -50,7 +50,7 @@ due to a large number of subsurface scattering events.
 This report is the implementation of an analytical model for subsurface scattering 
 which captures translucency effects that are present in the reference solutions but 
 remain absent with existing models. The idea is that a ray source corresponds better to 
-the light that refracts through the surface of a translucent material.
+the light that refracts through the surface of a translucent material. 
 
 
 
@@ -83,17 +83,18 @@ My code is running on my personal computer, the specifications is listed:
 \hline
 Hardware & Params & Additional\\
 \hline
-CPU & i7 & \\
+CPU & i7 & 4700MQ\\
 GPU & NVIDIA & GTX 780m\\
 RAM & 16GB & \\
 DRAM & 3GB & \\
+OS & Windows 7 & 64-bit\\
 \hline
 \end{tabular}
 \end{center}
 
 Upenn(University of Pennsylvania) has open sourced one of their \href{https://cis565-fall-2015.github.io/}{framework}  for 
 global illumination and rendering. My project is based on the ray tracing framework
-of Upenn.
+of Upenn. Some simplified version of the calculations are also provided for analysis of the algorithm.
 
 \section{Theory}
 \label{sec:orgheadline4}
@@ -170,14 +171,24 @@ In order to build a platform for BSSRDF, I implemented some basic functionalitie
 I simplified a couple things in order to test faster. 
 \subsection{Basic Functions}
 \label{sec:orgheadline5}
-Basic ray tracer model is necessary for rendering multiple 
-\subsection{}
-\label{sec:orgheadline6}
+Basic ray tracer model is necessary for rendering multiple objects. This GPU based path tracer with global illumination and anti-alising 
+can render diffuse, perfect specular objects, transparent and subsurface scattering materials. Depth of Field was also implemented 
+with some twist.
 
-\section{Results}
+However since I did not have time to implement mesh geometry, I was not able to produce shapes other than cube and sphere.  
+\subsection{Subsurface Scattering}
+\label{sec:orgheadline6}
+Both BSSRDF and directional dipole method were implemented. If you want to test, simply change the "BSSRDF" value of a material, then new an object into 
+one of the .txt files in the scenes folder. 
+
+Basic BSSRDF was implemented with a fast logarithmic distribution function. Directional dipole, however, was implemented with a 
+Holsen sequence  generator, which is not very time efficient.
+
+Below is an example of comparison between BSSRDF and directional dipole method:
+
+\section{Results and Proposal for Further Research}
 \label{sec:orgheadline8}
 
-% you should start doing things from here.
 
 
 \section{Acknowledgements}

@@ -150,6 +150,8 @@ one of the .txt files in the scenes folder.
 Basic BSSRDF was implemented with a fast logarithmic distribution function. Directional dipole, however, was implemented with a 
 Holsen sequence  generator, which is not very time efficient.
 
+Below is an example of comparison between BSSRDF and directional dipole method:
+
 * Results and Proposal for Further Research
 
 
