@@ -1,4 +1,4 @@
-% Created 2016-04-28 Thu 08:16
+% Created 2016-04-28 Thu 09:05
 \documentclass[11pt]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -14,6 +14,7 @@
 \usepackage{amssymb}
 \usepackage{capt-of}
 \usepackage{hyperref}
+\usepackage{cite}
 \author{Pan An (A0134556A)}
 \date{\today}
 \title{Directional Dipole Model for Subsurface Scattering}
@@ -59,14 +60,14 @@ the light that refracts through the surface of a translucent material.
 Subsurface scattering(SSS), is an optical physics based machanism describing the
 process of light penetrating translucent materials. Different models
 have been proposed in order to produce artifitial images of real life
-materials. Bidirectional reflectance distribution~\cite{} function was
+materials. Bidirectional reflectance distribution~\cite{brdf} function was
 introduced as a simple but efficient model for reflection of light at
-the surface of objects. Jensen et. al.~\cite{} introduced an improved model:
+the surface of objects. Jensen et. al.~\cite{jensen} introduced an improved model:
 bidirectional subsurface scattering reflection distribution
 function(BSSRDF).
 
 A list of some physical caracteristics of different materials  has been
-measured in Jensen's work. Gkioulekas et. al.~\cite{} studied on the
+measured in Jensen's work. Gkioulekas et. al.~\cite{materials} studied on the
 physical characteristics of daily materials. Gkioulekas et. al. used a
 series of techniques and algorithms in order to achieve a set of data
 for daily materials such as wine, milk, coffee etc. Based on their
@@ -121,7 +122,7 @@ Normally the BSSRDF term is split
  into two or more additional terms  in order to achieve a better approximation of the real world,
  accounting for single and multiple scattering. In case of multiple scattering, 
 i.e. when light bounces multiple times inside the material, the radiance becomes largely isotropic, and the 
-whole process can be treated as a diffusion.
+whole process can be treated as a diffusion\cite{books/daglib/0093591}.
 
 \vspace{0.6cm}
 {\bf Directional subsurface scattering}
@@ -182,18 +183,64 @@ Both BSSRDF and directional dipole method were implemented. If you want to test,
 one of the .txt files in the scenes folder. 
 
 Basic BSSRDF was implemented with a fast logarithmic distribution function. Directional dipole, however, was implemented with a 
-Holsen sequence  generator, which is not very time efficient.
+Holsen sequence  generator, which is not very time efficient. A simple BSSRDF implementation:
+
+\begin{figure}[htb]
+\centering
+\includegraphics[width=9cm]{./img/bluesss.png}
+\caption{\label{fig:orgparagraph1}
+Left: BSSRDF. Right: Directional Dipole}
+\end{figure}
+
 
 Below is an example of comparison between BSSRDF and directional dipole method:
 
 \begin{figure}[htb]
 \centering
-\includegraphics[width=.9\linewidth]{./img/comparison.png}
-\caption{\label{fig:orgparagraph1}
-This is the caption for the next figure link (or table)}
+\includegraphics[width=9cm]{./img/comparison.png}
+\caption{\label{fig:orgparagraph2}
+Left: BSSRDF. Right: Directional Dipole}
 \end{figure}
+
+
 \section{Results and Proposal for Further Research}
 \label{sec:orgheadline8}
+
+
+The rendering process showed a good result of both BSSRDF and Directional Dipole methods. 
+As we can see that the light around the object of BSSRDF is near average, and 
+the result of directional dipole shows some difference. Figure. 5
+shows the relationship between the input light angle and the diffusion
+result. 
+
+However during the rendering process, we can see that the
+ result is quite noisy.
+ We can see that some of the details in the final image are missing, 
+but the result is good enough to trick the observer's eye. Regarding the performance, 
+preliminary results give a rendering time of 0.37 seconds per frame on
+a low-end modern GPU. Directional method with different shapes are
+also tested as shown in Figure. 4: 
+\begin{figure}[htb]
+\centering
+\includegraphics[width=9cm]{./img/ball and cube.png}
+\caption{\label{fig:orgparagraph4}
+Radiance difference with different angles.}
+\end{figure}
+
+
+Further steps should be focused on a more generalized version of directional dipole for mesh geometry objects. 
+Also during the rendering process directional dipole method was implemented with a Holsen Sequence, which is not 
+O(1) in this case. A better way to get exponential sampling is by utilizing a combination of 
+number theory and Taylor expansion, which is explained in the presentation.
+\begin{figure}[htb]
+\centering
+\includegraphics[width=9cm]{./img/analysis.png}
+\caption{\label{fig:o3}
+Radiance difference with different angles.}
+\end{figure}
+
+
+
 
 
 
@@ -202,5 +249,18 @@ This is the caption for the next figure link (or table)}
 I want to thank professor Yin for offering to help with the hardware. 
 The platform  that I used to develop is provided by CIS565 GPU programming course. 
 Part of my report material comes from DTU github repository, will be adding license information if needed.
-And special thanks to professor WengFai Wong, for the guidance of low level optimizations. 
+And special thanks to professor WengFai Wong, for the guidance of low
+level optimizations. 
+
+
+\bibliography{papers}{}
+
+\bibliographystyle{plain}
+
+
 \end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:

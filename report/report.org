@@ -152,18 +152,44 @@ Holsen sequence  generator, which is not very time efficient. A simple BSSRDF im
 
 #+CAPTION: Left: BSSRDF. Right: Directional Dipole
 #+NAME:   fig:SED-HR4049
-#+ATTR_LATEX: :width 4cm
-     [[./img/comparison.png]]
+#+ATTR_LATEX: :width 6cm
+     [[./img/bluesss.png]]
 
 
 Below is an example of comparison between BSSRDF and directional dipole method:
 
 #+CAPTION: Left: BSSRDF. Right: Directional Dipole
 #+NAME:   fig:SED-HR4049
-#+ATTR_LATEX: :width 4cm
+#+ATTR_LATEX: :width 6cm
      [[./img/comparison.png]]
+
+
 * Results and Proposal for Further Research
 
+
+The rendering process showed a good result of both BSSRDF and Directional Dipole methods. 
+As we can see that the light around the object of BSSRDF is near average, and 
+the result of directional dipole shows some difference. 
+
+However during the rendering process, we can see that the
+ result is quite noisy.
+ We can see that some of the details in the final image are missing, 
+but the result is good enough to trick the observer's eye. Regarding the performance, 
+preliminary results give a rendering time of 0.37 seconds per frame on a low-end modern GPU.
+
+Further steps should be focused on a more generalized version of directional dipole for mesh geometry objects. 
+Also during the rendering process directional dipole method was implemented with a Holsen Sequence, which is not 
+O(1) in this case. A better way to get exponential sampling is by utilizing a combination of 
+number theory and Taylor expansion, which is explained in the presentation.
+#+CAPTION: Radiance difference with different angles.
+#+NAME:   fig:rad
+#+ATTR_LATEX: :width 6cm
+     [[./img/analysis.png]]
+
+
+
+
+Simulations of the radiance of 
 
 
 * Acknowledgements

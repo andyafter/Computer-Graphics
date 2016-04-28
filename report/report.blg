@@ -1,0 +1,49 @@
+This is BibTeX, Version 0.99d (TeX Live 2015)
+Capacity: max_strings=35307, hash_size=35307, hash_prime=30011
+The top-level auxiliary file: report.aux
+The style file: plain.bst
+Database file #1: papers.bib
+Warning--empty journal in materials
+Warning--empty year in materials
+You've used 4 entries,
+            2118 wiz_defined-function locations,
+            517 strings with 4688 characters,
+and the built_in function-call counts, 1425 in all, are:
+= -- 130
+> -- 86
+< -- 1
++ -- 35
+- -- 30
+* -- 97
+:= -- 246
+add.period$ -- 12
+call.type$ -- 4
+change.case$ -- 26
+chr.to.int$ -- 0
+cite$ -- 6
+duplicate$ -- 55
+empty$ -- 98
+format.name$ -- 30
+if$ -- 291
+int.to.chr$ -- 0
+int.to.str$ -- 4
+missing$ -- 5
+newline$ -- 22
+num.names$ -- 8
+pop$ -- 38
+preamble$ -- 1
+purify$ -- 23
+quote$ -- 0
+skip$ -- 37
+stack$ -- 0
+substring$ -- 53
+swap$ -- 13
+text.length$ -- 1
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 14
+warning$ -- 2
+while$ -- 11
+width$ -- 5
+write$ -- 41
+(There were 2 warnings)

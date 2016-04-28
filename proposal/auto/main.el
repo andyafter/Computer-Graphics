@@ -20,5 +20,6 @@
     "fig:dipole"
     "fig:directional")
    (LaTeX-add-bibliographies
-    "papers")))
+    "papers"))
+ :latex)
 
