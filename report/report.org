@@ -148,10 +148,20 @@ Both BSSRDF and directional dipole method were implemented. If you want to test,
 one of the .txt files in the scenes folder. 
 
 Basic BSSRDF was implemented with a fast logarithmic distribution function. Directional dipole, however, was implemented with a 
-Holsen sequence  generator, which is not very time efficient.
+Holsen sequence  generator, which is not very time efficient. A simple BSSRDF implementation:
+
+#+CAPTION: Left: BSSRDF. Right: Directional Dipole
+#+NAME:   fig:SED-HR4049
+#+ATTR_LATEX: :width 4cm
+     [[./img/comparison.png]]
+
 
 Below is an example of comparison between BSSRDF and directional dipole method:
 
+#+CAPTION: Left: BSSRDF. Right: Directional Dipole
+#+NAME:   fig:SED-HR4049
+#+ATTR_LATEX: :width 4cm
+     [[./img/comparison.png]]
 * Results and Proposal for Further Research
 
 
