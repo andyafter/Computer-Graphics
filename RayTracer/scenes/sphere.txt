@@ -10,7 +10,7 @@ EMITTANCE   5
 
 // Camera
 CAMERA
-RES         800 800
+RES         10 10
 FOVY        45
 ITERATIONS  5000
 DEPTH       8
@@ -19,10 +19,12 @@ EYE         0.0 5 10.5
 VIEW        0 0 -1
 UP          0 1 0
 
-// Sphere
+// sphere
 OBJECT 0
 sphere
 material 0
 TRANS       0 0 0
 ROTAT       0 0 0
 SCALE       3 3 3
+MOVE        0 2 0
+

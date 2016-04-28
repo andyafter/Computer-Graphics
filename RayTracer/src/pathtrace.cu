@@ -1,10 +1,12 @@
 #include <cstdio>
 #include <cuda.h>
+#include <cuda_runtime.h>
 #include <cmath>
 #include <thrust/execution_policy.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
-#include <thrust\device_ptr.h>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 #include "sceneStructs.h"
 #include "scene.h"
@@ -14,722 +16,678 @@
 #include "pathtrace.h"
 #include "intersections.h"
 #include "interactions.h"
-#include "image.h"
-
-#define ERRORCHECK 1
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
-void checkCUDAErrorFn(const char *msg, const char *file, int line) {
-#if ERRORCHECK
-    cudaDeviceSynchronize();
-    cudaError_t err = cudaGetLastError();
-    if (cudaSuccess == err) {
-        return;
-    }
 
-    fprintf(stderr, "CUDA error");
-    if (file) {
-        fprintf(stderr, " (%s:%d)", file, line);
-    }
-    fprintf(stderr, ": %s: %s\n", msg, cudaGetErrorString(err));
-#  ifdef _WIN32
-    getchar();
-#  endif
-    exit(EXIT_FAILURE);
-#endif
+inline int ilog2(int x) {
+	int lg = 0;
+	while (x >>= 1) {
+		++lg;
+	}
+	return lg;
+}
+
+inline int ilog2ceil(int x) {
+	return ilog2(x - 1) + 1;
+}
+
+void checkCUDAErrorFn(const char *msg, const char *file, int line) {
+	cudaDeviceSynchronize();
+	cudaError_t err = cudaGetLastError();
+	if (cudaSuccess == err) {
+		return;
+	}
+
+	fprintf(stderr, "CUDA error");
+	if (file) {
+		fprintf(stderr, " (%s:%d)", file, line);
+	}
+	fprintf(stderr, ": %s: %s\n", msg, cudaGetErrorString(err));
+	exit(EXIT_FAILURE);
 }
 
 __host__ __device__
 thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int depth) {
-    int h = utilhash((1 << 31) | (depth << 22) | iter) ^ utilhash(index);
-    return thrust::default_random_engine(h);
+	int h = utilhash((1 << 31) | (depth << 22) | iter) ^ utilhash(index);
+	return thrust::default_random_engine(h);
 }
 
 //Kernel that writes the image to the OpenGL PBO directly.
 __global__ void sendImageToPBO(uchar4* pbo, glm::ivec2 resolution,
-        int iter, glm::vec3* image) {
-    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	int iter, glm::vec3* image) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
-    if (x < resolution.x && y < resolution.y) {
-        int index = x + (y * resolution.x);
-        glm::vec3 pix = image[index];
+	if (x < resolution.x && y < resolution.y) {
+		int index = x + (y * resolution.x);
+		glm::vec3 pix = image[index];
 
-        glm::ivec3 color;
-        color.x = glm::clamp((int) (pix.x / iter * 255.0), 0, 255);
-        color.y = glm::clamp((int) (pix.y / iter * 255.0), 0, 255);
-        color.z = glm::clamp((int) (pix.z / iter * 255.0), 0, 255);
+		glm::ivec3 color;
+		color.x = glm::clamp((int)(pix.x / iter * 255.0), 0, 255);
+		color.y = glm::clamp((int)(pix.y / iter * 255.0), 0, 255);
+		color.z = glm::clamp((int)(pix.z / iter * 255.0), 0, 255);
 
-        // Each thread writes one pixel location in the texture (textel)
-        pbo[index].w = 0;
-        pbo[index].x = color.x;
-        pbo[index].y = color.y;
-        pbo[index].z = color.z;
-    }
+		// Each thread writes one pixel location in the texture (textel)
+		pbo[index].w = 0;
+		pbo[index].x = color.x;
+		pbo[index].y = color.y;
+		pbo[index].z = color.z;
+	}
 }
-
 
 static Scene *hst_scene = NULL;
 static glm::vec3 *dev_image = NULL;
-static Geom *dev_geoms;
-static Material *dev_mats;
+static Geom *dev_geoms = NULL;
+static Material *dev_mats = NULL;
+static Ray *dev_rayArray = NULL;
 
-glm::vec3 **dev_textures;
-glm::vec2 * dev_texInfo;
+int* dev_bools;
+int* dev_indices;
 
-bool doStreamCompact = false;
-Ray * dev_rays;
-Ray * dev_rays_temp;
+// TODO: static variables for device memory, scene/camera info, etc
+// ...
 
-int ttlLights = 0;
-int * dev_lightIdxs;
-int *dev_temps;
-int *dev_incre;
-int *dev_bSum;
+void pathtraceInit(Scene *scene) {
+	hst_scene = scene;
+	const Camera &cam = hst_scene->state.camera;
+	const int pixelcount = cam.resolution.x * cam.resolution.y;
+	const Geom *geoms = &(hst_scene->geoms)[0];
+	const Material *mats = &(hst_scene->materials)[0];
 
-
-void pathtraceInit(Scene *scene,bool strCmpt) {
-    hst_scene = scene;
-	doStreamCompact = strCmpt;
-    const Camera &cam = hst_scene->state.camera;
-    const int pixelcount = cam.resolution.x * cam.resolution.y;
-
-	//(1) Initialize array of path rays
-	int raySize = pixelcount*sizeof(Ray);
-	cudaMalloc((void**)&dev_rays, raySize);
-	cudaMalloc((void**)&dev_rays_temp, raySize);
-	
-	//for stream compact
-	cudaMalloc((void**)&dev_temps, sizeof(int)*pixelcount);
-	cudaMalloc((void**)&dev_incre, sizeof(int)*pixelcount);
-	cudaMalloc((void**)&dev_bSum, sizeof(int)*pixelcount);
-	//Copy geoms to dev_geoms
-	int geoSize = hst_scene->geoms.size()*sizeof(Geom);
-	Geom * hst_geoms = (Geom *)malloc(geoSize);
-
-	std::copy(hst_scene->geoms.begin(),hst_scene->geoms.end(),hst_geoms);
-	/* //??? or:
-	hst_geoms = & hst_scene->geoms[0];
-	*/
-
-	cudaMalloc((void**)&dev_geoms, geoSize);
-	cudaMemcpy(dev_geoms, hst_geoms, geoSize, cudaMemcpyHostToDevice);
-
-	//Copy materials to dev_mats
-	int matSize = hst_scene->materials.size()*sizeof(Material);
-	cudaMalloc((void**)&dev_mats, matSize);
-	cudaMemcpy(dev_mats, hst_scene->materials.data(), matSize, cudaMemcpyHostToDevice);
-
-	//Copy materials to dev_textures
-	int texSize = hst_scene->textures.size()*sizeof(glm::vec3 *);
-	int texInfoSize = hst_scene->textures.size()*sizeof(glm::vec2);
-	cudaMalloc((void**)&dev_textures, texSize);
-	cudaMalloc((void**)&dev_texInfo, texInfoSize);
-	std::vector<glm::vec3*> tempImg;
-	std::vector<glm::vec2> tempInfo;
-	for (int i = 0; i < hst_scene->textures.size(); i++)
-	{
-		glm::vec3 * dev_img;
-		int imgSize = hst_scene->textures[i].getSize()*sizeof(glm::vec3);
-		cudaMalloc((void**)&dev_img, imgSize);
-		cudaMemcpy(dev_img, hst_scene->textures[i].pixels, imgSize, cudaMemcpyHostToDevice);
-		tempImg.push_back(dev_img);
-		tempInfo.push_back(glm::vec2(hst_scene->textures[i].xSize, hst_scene->textures[i].ySize));
-	}
-	cudaMemcpy(dev_textures, tempImg.data(), texSize, cudaMemcpyHostToDevice);
-	cudaMemcpy(dev_texInfo, tempInfo.data(), texInfoSize, cudaMemcpyHostToDevice);
+	cudaMalloc(&dev_geoms, pixelcount * sizeof(Geom));
+	cudaMalloc(&dev_mats, pixelcount * sizeof(Material));
+	cudaMalloc(&dev_rayArray, pixelcount * sizeof(Ray));
+	cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
+	cudaMemset(dev_rayArray, 0, pixelcount * sizeof(Ray));
 
 
-	//Copy lightIdxs to dev_lightIdxs
-	ttlLights = hst_scene->lightIdxs.size();
-	int lightSize = ttlLights *sizeof(int);
-	cudaMalloc((void**)&dev_lightIdxs, lightSize);
-	cudaMemcpy(dev_lightIdxs, hst_scene->lightIdxs.data(), lightSize, cudaMemcpyHostToDevice);
+	cudaMemcpy(dev_mats, mats, hst_scene->materials.size() * sizeof(Material), cudaMemcpyHostToDevice);
 
-	// dev_image initialize
-    cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
-    cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
 
-    checkCUDAError("pathtraceInit");
+	// TODO: initialize the above static variables added above
+
+	checkCUDAError("pathtraceInit");
 }
 
 void pathtraceFree() {
-
-	cudaFree(dev_bSum);
-
-	cudaFree(dev_incre);
-	cudaFree(dev_temps);
-	cudaFree(dev_rays);
-	cudaFree(dev_rays_temp);
+	cudaFree(dev_image);  // no-op if dev_image is null
+	// TODO: clean up the above static variables
 	cudaFree(dev_geoms);
 	cudaFree(dev_mats);
-	
-    cudaFree(dev_image);// no-op if dev_image is null
-
-	//for (int i = 0; i < hst_scene->textures.size(); i++)
-	//{
-	//	cudaFree(dev_textures[i]);
-	//}
-	cudaFree(dev_texInfo);
-	cudaFree(dev_textures);
-    checkCUDAError("pathtraceFree");
+	cudaFree(dev_rayArray);
+	checkCUDAError("pathtraceFree");
 }
 
-__device__ Ray GenerateRayFromCam(Camera cam, int x, int y)
-{
-	Ray ray_xy;
-	ray_xy.origin = cam.position;
-
-	glm::vec3 C_ = cam.view;
-	glm::vec3 U_ = cam.up;
-	glm::vec3 A_ = glm::cross(C_, U_);
-	glm::vec3 B_ = glm::cross(A_, C_);
-	glm::vec3 M_ = cam.position + C_;
-
-	float tanPhi = tan(cam.fov.x*PI / 360);
-	float tanTheta = tanPhi*(float)cam.resolution.x / (float)cam.resolution.y;
-	glm::vec3 V_ = glm::normalize(B_)*glm::length(C_)*tanPhi;
-	glm::vec3 H_ = glm::normalize(A_)*glm::length(C_)*tanTheta;
-
-	float Sx = ((float)x + 0.5) / (cam.resolution.x - 1);
-	float Sy = ((float)y + 0.5) / (cam.resolution.y - 1);
-	glm::vec3 Pw = M_ + (2 * Sx - 1)*H_ - (2 * Sy - 1)*V_;
-	glm::vec3 Dir_ = Pw - cam.position;
-
-	ray_xy.direction = glm::normalize(Dir_);
-
-	return ray_xy;
-}
-
-__global__ void kernInitPathRays(Camera cam,Ray * rays,int iter)
-{
+/**
+* Example function to generate static and test the CUDA-GL interop.
+* Delete this once you're done looking at it!
+*/
+__global__ void generateNoiseDeleteMe(Camera cam, int iter, glm::vec3 *image) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-	if (x < cam.resolution.x && y < cam.resolution.y)
-	{
+
+	if (x < cam.resolution.x && y < cam.resolution.y) {
 		int index = x + (y * cam.resolution.x);
-		rays[index].pixelIndex = glm::vec2(x,y);
-		rays[index].imageIndex = index;
-		rays[index].terminated = false;
-		rays[index].origin = cam.position;
-		rays[index].carry = glm::vec3(1,1,1);
 
-		glm::vec3 C_ = cam.view;
-		glm::vec3 U_ = cam.up;
-		glm::vec3 A_ = glm::cross(C_, U_);
-		glm::vec3 B_ = glm::cross(A_, C_);
-		glm::vec3 M_ = cam.position + C_;
-
-		float tanPhi = tan(cam.fov.x*PI / 180);
-		float tanTheta = tanPhi*(float)cam.resolution.x / (float)cam.resolution.y;
-		glm::vec3 V_ = glm::normalize(B_)*glm::length(C_)*tanPhi;
-		glm::vec3 H_ = glm::normalize(A_)*glm::length(C_)*tanTheta;
-
+		thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 0);
 		thrust::uniform_real_distribution<float> u01(0, 1);
-		thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 1);
 
-		float rdmX = 1.05*(u01(rng) - 0.5);
-		float rdmY = 1.05*(u01(rng) - 0.5);
-		//anti-aliasing
-		float Sx = ((float)x + rdmX) / (cam.resolution.x - 1);
-		float Sy = ((float)y + rdmY) / (cam.resolution.y - 1);
-		glm::vec3 Pw = M_ - (2 * Sx - 1)*H_ - (2 * Sy - 1)*V_;
-		glm::vec3 Dir_ = Pw - cam.position;
-
-		rays[index].direction = glm::normalize(Dir_);
-		rays[index].lastObjIdx = -1;
-		rays[index].origMatIdx = -1;
+		// CHECKITOUT: Note that on every iteration, noise gets added onto
+		// the image (not replaced). As a result, the image smooths out over
+		// time, since the output image is the contents of this array divided
+		// by the number of iterations.
+		//
+		// Your renderer will do the same thing, and, over time, it will become
+		// smoother.
+		image[index] += glm::vec3(u01(rng));
 	}
 }
 
-__device__ float rayIntersection(
-	Geom geometry, 
-	Ray r,
-	glm::vec3& intersectionPoint,
-	glm::vec3& normal, 
-	int &materIdx,
-	bool &outside,
-	glm::vec2& uv
-	)
-{
-	float temp_T = -1;
-	switch (geometry.type)
-	{
-	case SPHERE:
-		temp_T = sphereIntersectionTest(geometry, r, intersectionPoint, normal,outside,uv);
-		materIdx = geometry.materialid;
-		break;
-	case CUBE:
-		temp_T = boxIntersectionTest(geometry, r, intersectionPoint, normal, outside,uv);
-		materIdx = geometry.materialid;// glm::vec3(0, 1, 0);
-		break;
-	default:
-		break;
+//Create ray to be shot at a pixel in the image
+__global__ void kernRayGenerate(Camera cam, Ray *ray, int iter, bool dof){
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	int index = x + (y*cam.resolution.x);
+	thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 0);
+	thrust::uniform_real_distribution<float> unitDistrib(-.5f, .5f);
+	thrust::uniform_real_distribution<float> dofDistrib(-1.0f, 1.0f);
+	//Calculate camera's world position
+	if (x < cam.resolution.x && y < cam.resolution.y) {
+		glm::vec3 A = glm::cross(cam.view, cam.up);
+		glm::vec3 B = glm::cross(A, cam.view);
+		glm::vec3 M = cam.position + cam.view;
+		float lenC = glm::length(cam.view);
+		float lenA = glm::length(A);
+		float lenB = glm::length(B);
+		float tantheta = (float)cam.resolution.x;
+		tantheta /= (float)cam.resolution.y;
+		tantheta *= tan((float)glm::radians(cam.fov[1]));
+
+		glm::vec3 H = (A*lenC*tantheta) / lenA;
+		glm::vec3 V = (B*lenC*tan((float)glm::radians(cam.fov[1]))) / lenB;
+
+		//Create ray with direction and origin
+		//Jitter rays with uniform distribution
+		//printf("%f ", unitDistrib(rng));
+		float sx = ((float)x + unitDistrib(rng)) / ((float)cam.resolution.x - 1.0f);
+		float sy = ((float)y + unitDistrib(rng)) / ((float)cam.resolution.y - 1.0f);
+		//Get world coordinates of pixel
+		glm::vec3 WC = M - (2.0f*sx - 1.0f)*H - (2.0f*sy - 1.0f)*V;
+		//Get direction of ray
+		glm::vec3 dir = glm::normalize(WC - cam.position);
+
+		ray[index].origin = cam.position;
+		ray[index].direction = dir;
+		ray[index].color = glm::vec3(1.0, 1.0, 1.0);
+		ray[index].index = index;
+		ray[index].terminated = false;
+		ray[index].out = true;
+		if (dof == true) {
+			glm::vec3 apOff = glm::vec3(dofDistrib(rng), dofDistrib(rng), 0.0f);
+			glm::vec3 new_E = cam.position + apOff;
+			float focal = 11.5866f; //glm::length(glm::vec3(-2.0f, 5.0f,2.0f) - new_E);
+			dir *= focal;
+			dir -= apOff;
+			dir = glm::normalize(dir);
+			ray[index].origin = new_E;
+			ray[index].direction = dir;
+		}
 	}
-	return temp_T;
+
 }
 
-__global__ void kernComputeRay(
-	int raysNum,
-	Camera cam,
-	Ray * rays,
-	Material * dev_mat,
-	glm::vec3**dev_textures,
-	glm::vec2 * dev_texInfo,
-	Geom * dev_geo,
-	int geoNum,
-	int iter,
-	int depth)
-{
-	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+//Helper function to get random point on cubic light
+__device__ glm::vec3 getRandomPointOnCube(Geom node, int iter, int index) {
+	// TODO: get the dimensions of the transformed cube in world space
+	glm::vec3 dim(0.0f, 0.0f, 0.0f);
+	dim = node.scale;
+
+	// Get surface area of the cube
+	float side1 = dim[0] * dim[1];		// x-y
+	float side2 = dim[1] * dim[2];		// y-z
+	float side3 = dim[0] * dim[2];		// x-z
+	float totalArea = 2.0f * (side1 + side2 + side3);
+
+	thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 0);
+	thrust::uniform_real_distribution<float> unitDistrib(-.5f, .5f);
+	thrust::uniform_real_distribution<float> dofDistrib(0.0f, 1.0f);
+
+	// pick random face weighted by surface area
+	float r = floor(dofDistrib(rng));
+	// pick 2 random components for the point in the range (-0.5, 0.5)
+	float c1 = unitDistrib(rng);
+	float c2 = unitDistrib(rng);
+
+	glm::vec3 point;
+	if (r < side1 / totalArea) {
+		// x-y front
+		point = glm::vec3(c1, c2, 0.5f);
+	}
+	else if (r < (side1 * 2) / totalArea) {
+		// x-y back
+		point = glm::vec3(c1, c2, -0.5f);
+	}
+	else if (r < (side1 * 2 + side2) / totalArea) {
+		// y-z front
+		point = glm::vec3(0.5f, c1, c2);
+	}
+	else if (r < (side1 * 2 + side2 * 2) / totalArea) {
+		// y-z back
+		point = glm::vec3(-0.5f, c1, c2);
+	}
+	else if (r < (side1 * 2 + side2 * 2 + side3) / totalArea) {
+		// x-z front 
+		point = glm::vec3(c1, 0.5f, c2);
+	}
+	else {
+		// x-z back
+		point = glm::vec3(c1, -0.5f, c2);
+	}
+
+	// TODO: transform point to world space
+	glm::mat4 T(1.0f);
+	T = glm::translate(T, node.translation);
+
+	if (node.rotation[0] != 0){
+		T = glm::rotate(T, node.rotation[0] * (PI / 180.0f), glm::vec3(1, 0, 0));
+	}
+	if (node.rotation[1] != 0){
+		T = glm::rotate(T, node.rotation[1] * (PI / 180.0f), glm::vec3(0, 1, 0));
+	}
+	if (node.rotation[2] != 0){
+		T = glm::rotate(T, node.rotation[2] * (PI / 180.0f), glm::vec3(0, 0, 1));
+	}
+
+	//T = glm::scale(T, node.scale);
+	glm::vec4 newPoint = T*glm::vec4(point, 1.0f);
+	point = glm::vec3(newPoint[0], newPoint[1], newPoint[2]);
+	return point;
+}
+
+//Helper function to get random point on spherical light
+/*__device__ glm::vec3 getRandomPointOnSphere(Geom node, int iter, int index) {
+// generate u, v, in the range (0, 1)
+float u = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+float v = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+float theta = 2.0f * PI * u;
+float phi = acos(2.0f * v - 1.0f);
+// find x, y, z coordinates assuming unit sphere in object space
+glm::vec3 point;
+point[0] = sin(phi) * cos(theta);
+point[1] = sin(phi) * sin(theta);
+point[2] = cos(phi);
+// TODO: transform point to world space
+glm::mat4 T(1.0f);
+T = glm::translate(T, node.translation);
+
+if (node.rotation[0] != 0){
+T = glm::rotate(T, node.rotation[0]*(PI/180.0f), glm::vec3(1,0,0));
+}
+if (node.rotation[1] != 0){
+T = glm::rotate(T, node.rotation[1]*(PI/180.0f), glm::vec3(0,1,0));
+}
+if (node.rotation[2] != 0){
+T = glm::rotate(T, node.rotation[2]*(PI/180.0f), glm::vec3(0,0,1));
+}
+
+glm::vec4 newPoint = T*glm::vec4(point, 1.0f);
+point = glm::vec3(newPoint[0], newPoint[1], newPoint[2]);
+return point;
+}*/
+//Helper function to find closest intersection
+__device__ float closestIntersection(Ray ray, const Geom* geoms, glm::vec3 &intersectionPoint, glm::vec3 &normal, bool &outside, int &objIndex, const int numGeoms){
+	glm::vec3 interPoint;
+	glm::vec3 norm;
+	bool out;
+	float t = -1;
+	float dist;
+	for (int i = 0; i < numGeoms; i++) {
+		if (geoms[i].type == CUBE) {
+			dist = boxIntersectionTest(geoms[i], ray, interPoint, norm, out);
+		}
+		else if (geoms[i].type == SPHERE) {
+			dist = sphereIntersectionTest(geoms[i], ray, interPoint, norm, out);
+		}
+		if ((dist != -1 && dist < t) || t == -1) {
+			t = dist;
+			intersectionPoint = interPoint;
+			normal = norm;
+			outside = out;
+			objIndex = i;
+
+		}
+	}
+	return t;
+
+}
+
+//Function to find next ray
+__global__ void kernPathTracer(Camera cam, Ray* rayArray, const Geom* geoms, const Material* mats, const int numGeoms, const int numMats, glm::vec3* dev_image, int iter, int depth, int traceDepth, bool m_blur, int size){
+	//int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	//int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 	//int index = x + (y * cam.resolution.x);
-	//if (x < cam.resolution.x && y < cam.resolution.y) 
-	if (index < raysNum)
-	{
-		if (rays[index].terminated)
-		{
+	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int imageSize = (cam.resolution.x * cam.resolution.y);
+	//find closest intersection
+	/*if (rayArray[index].terminated == true && index < size) {
+	dev_image[rayArray[index].index] = glm::vec3(1.0, 0.0, 0.0);
+	printf("in here: %i, %i, %i \n", size, index, rayArray[index].index);
+	return;
+	}
+	else {
+	//printf("is fine: %i, %i, %i \n", depth, index, rayArray[index].index);
+	}*/
+
+	if (index < size && rayArray[index].terminated == false) {//rayArray[index].index < imageSize && index < size && rayArray[index].terminated == false) {//x < cam.resolution.x && y < cam.resolution.y && rayArray[index].terminated == false) {
+		thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, depth);
+		glm::vec3 interPoint;
+		glm::vec3 norm;
+		bool out;
+		int objIndex;
+		if (depth == traceDepth) {
+			dev_image[rayArray[index].index] == glm::vec3(0.0f, 0.0f, 0.0f);
 			return;
 		}
-		// intersection with objects
-		glm::vec3 intrPoint;
-		glm::vec3 intrNormal;
-		float intrT = -1;
-		int intrMatIdx;
-		bool intrOutside;
-		glm::vec2 intrUV;
+		//Geom* m_blur_geoms = new Geom[numGeoms];
+		float t;
 
-		for (int i = 0; i < geoNum; i++)
-		{
-			glm::vec3 temp_intrPoint;
-			glm::vec3 temp_intrNormal;
-			float temp_T;
-			int temp_MatIdx;
-			bool temp_outside; 
-			glm::vec2 temp_uv;
-			temp_T = rayIntersection(dev_geo[i], rays[index], temp_intrPoint, temp_intrNormal, temp_MatIdx, temp_outside, temp_uv);
-			if (temp_T < 0) continue;
-
-			if (intrT < 0 || temp_T < intrT && temp_T >0)
-			{
-				intrT = temp_T;
-				intrPoint = temp_intrPoint;
-				intrNormal = temp_intrNormal;
-				intrMatIdx = temp_MatIdx;
-				intrOutside = temp_outside;
-				intrUV = temp_uv;
+		if (m_blur) {
+			t = closestIntersection(rayArray[index], geoms, interPoint, norm, out, objIndex, numGeoms);
+		}
+		else {
+			t = closestIntersection(rayArray[index], geoms, interPoint, norm, out, objIndex, numGeoms);
+		}
+		rayArray[index].geomid = objIndex;
+		//get direction of next ray and compute new color
+		if (t >= 0.0f) {
+			if (mats[geoms[objIndex].materialid].emittance >= 1) {
+				rayArray[index].color *= mats[geoms[objIndex].materialid].emittance*mats[geoms[objIndex].materialid].color;
+				dev_image[rayArray[index].index] += rayArray[index].color;
+				rayArray[index].terminated = true;
+			}
+			else {
+				scatterRay(rayArray[index], rayArray[index].color, t, interPoint, norm, mats[geoms[objIndex].materialid], out, rng);
 			}
 		}
-		if (intrT > 0)//intersect with obj, update ray
-		{
-			thrust::default_random_engine rr = makeSeededRandomEngine(iter, index, depth);
-			scatterRay(rays[index], intrOutside, intrT, intrPoint, intrNormal, dev_mat[intrMatIdx], dev_textures, dev_texInfo,intrUV, rr);
-			rays[index].origMatIdx = intrMatIdx;
-			rays[index].lastObjIdx = intrOutside;
-		}
-		else
-		{
-			rays[index].terminated = true;
-			rays[index].carry = glm::vec3(0, 0, 0);// later background color
-			rays[index].lastObjIdx = -1;
-		}
-
-	}
-}
-
-__global__ void kernUpdateImage(
-	int raysNum,
-	Camera cam,
-	Ray * rays,
-	glm::vec3 *image)
-{
-	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-	//int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-	//int index = x + (y * cam.resolution.x);
-	if (index < raysNum)
-	{
-		if (rays[index].terminated)
-		{
-			image[rays[index].imageIndex] += rays[index].carry;
-			rays[index].carry = glm::vec3(0, 0, 0);
+		else {
+			//dev_image[index] *= glm::vec3(0.0f, 0.0f, 0.0f); //rayArray[index].color; 
+			rayArray[index].terminated = true;
 		}
 	}
 
 }
 
-__global__ void kernFinalImage(
-	int iter,
-	int raysNum,
-	glm::vec3** dev_textures,
-	Camera cam, Ray * rays,
-	glm::vec3 *image,
-	glm::vec2*dev_texInfo,
-	Geom * dev_geo,
-	Material * dev_mat,
-	int * dev_lightIdxs,
-	int geoNum,
-	int totalLights)
-{
-	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-	//int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-	//int index = x + (y * cam.resolution.x);
-	if (index < raysNum)
-	{
-		//Direct lighting
-		//(1) random point on light
-		// curently, only one box light source
-		// !!!later : a.multiply lights; b.sphere light
-		glm::vec3 color(0, 0, 0);
-		for (int i = 0; i < totalLights; i++)
-		{
-			int lightIndex = dev_lightIdxs[i];
-			glm::vec4 pointOnLight(0, 0, 0, 1);
-			thrust::default_random_engine rng = makeSeededRandomEngine(iter, index, 1);
-			thrust::uniform_real_distribution<float> u01(0, 1);
-			pointOnLight.x = u01(rng) - 0.5;
-			pointOnLight.y = u01(rng) - 0.5;
-			pointOnLight.z = u01(rng) - 0.5;
-			pointOnLight = dev_geo[lightIndex].transform *pointOnLight;
-			//(2) surface point (ray.origin) to light_point, anything in between?
-			glm::vec3 intrPoint;
-			glm::vec3 intrNormal;
-			float intrT = -1;
-			int intrMatIdx;
-			bool intrOutside;
-			glm::vec2 intrUV;
 
-			Ray surToLight;
-			surToLight.origin = rays[index].origin;
-			surToLight.direction = glm::normalize((glm::vec3)pointOnLight - rays[index].origin);
-			//!!! later : Function this forloop into rayIntersection.
-			for (int i = 0; i < geoNum; i++)
-			{
-				glm::vec3 temp_intrPoint;
-				glm::vec3 temp_intrNormal;
-				float temp_T;
-				int temp_MatIdx;
-				bool temp_outside;
-				glm::vec2 temp_uv;
-				temp_T = rayIntersection(dev_geo[i], surToLight, temp_intrPoint, temp_intrNormal, temp_MatIdx, temp_outside, temp_uv);
+__global__ void kernCombine(int *maxArray, int *newData, int n) {
+	int index = threadIdx.x + (blockIdx.x * blockDim.x);
 
-				if (temp_T < 0) continue;
-				if (intrT < 0 || temp_T < intrT && temp_T >0)
-				{
-					intrT = temp_T;
-					intrPoint = temp_intrPoint;
-					intrNormal = temp_intrNormal;
-					intrMatIdx = temp_MatIdx;
-					intrOutside = temp_outside;
-					intrUV = temp_uv;
-				}
-			}
-			//(3) if nothing in between, cos ray, calc direct illumination
-			if (intrMatIdx == lightIndex)
-			{
-				//Direct Illumination
-				//!!! later : reduce bounce
-				color = dev_mat[lightIndex].emittance*dev_mat[lightIndex].color;
-				color *= rays[index].carry;
-				scatterRay(rays[index], intrOutside, intrT, intrPoint, intrNormal, dev_mat[rays[index].origMatIdx], dev_textures, dev_texInfo, intrUV,rng);
-				color *= max(0.0f, glm::dot(glm::normalize(-rays[index].direction), glm::normalize(surToLight.direction)));
-			}
-		}
-		image[rays[index].imageIndex] += color;
-		rays[index].terminated = true;
+	if (index < n) {
+		//printf("index: %i max: %i \n", g_idata[index], maxArray[blockIdx.x]);
+		newData[index] = newData[index] + maxArray[blockIdx.x];
+
 	}
 }
 
-/**
- * Example function to generate static and test the CUDA-GL interop.
- * Delete this once you're done looking at it!
- */
-struct testdelete
-{
-	__host__ __device__
-		bool operator()(const int a)
-	{
-		return a==1?false:true;
-	}
-};
-struct is_terminated
-{
-	__host__ __device__ 
-		bool operator()(const Ray ray_xy)
-	{
-		return ray_xy.terminated;
-	}
-};
-
-/**
- * Wrapper for the __global__ call that sets up the kernel calls and does a ton
- * of memory management
- */
-
-__global__ void scan_sharedMem(int *dev_temp, int *Scan_odata)
-{
-	int n = blockDim.x * 2;
-
-	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-	int thid = threadIdx.x;
-
-	//Work-efficient scan with shared memory.
-	//http://http.developer.nvidia.com/GPUGems3/gpugems3_ch39.html
-	extern __shared__ int scan[];					//allocated on invocation
+__global__ void kernScan(int *maxArray, int *g_idata, int n) {
+	//printf("IN THIN FUNCTION AELFHGGGGHF");
+	extern __shared__ int temp[];
+	//printf("blockId: %i", blockDim.x);
+	int thid = threadIdx.x + (blockIdx.x * blockDim.x);
+	int t = threadIdx.x;
 	int offset = 1;
-	scan[2 * thid] = dev_temp[2 * index];				//loat ray.terminated to shared memory : scan
-	scan[2 * thid + 1] = dev_temp[2 * index + 1];
-
-
-	for (int d = n >> 1; d > 0; d >>= 1)	//build sum in place up the tree
-	{
+	temp[2 * t] = g_idata[2 * thid];
+	temp[2 * t + 1] = g_idata[2 * thid + 1];
+	for (int d = (2 * blockDim.x) >> 1; d > 0; d >>= 1) {
 		__syncthreads();
-		if (thid<d)
-		{
-			int ai = offset*(2 * thid + 1) - 1;
-			int bi = offset*(2 * thid + 2) - 1;
-
-			scan[bi] += scan[ai];
+		if (t < d) {
+			int ai = offset*(2 * t + 1) - 1;
+			int bi = offset*(2 * t + 2) - 1;
+			temp[bi] += temp[ai];
 		}
 		offset *= 2;
-
 	}
-	if (thid == 0)								//clear the last element
-		scan[n - 1] = 0;
+	if (t == 0) {
+		temp[2 * blockDim.x - 1] = 0;
+	}
 
-	for (int d = 1; d < n; d *= 2)			// traverse down tree & build scan
-	{
+	for (int d = 1; d < (2 * blockDim.x); d *= 2) {
 		offset >>= 1;
 		__syncthreads();
-		if (thid < d)
-		{
-			int ai = offset*(2 * thid + 1) - 1;
-			int bi = offset*(2 * thid + 2) - 1;
-
-			int t = scan[ai];
-			scan[ai] = scan[bi];
-			scan[bi] += t;
+		if (t < d) {
+			int ai = offset *(2 * t + 1) - 1;
+			int bi = offset *(2 * t + 2) - 1;
+			float t2 = temp[ai];
+			temp[ai] = temp[bi];
+			temp[bi] += t2;
 		}
 	}
-	//__syncthreads();
-
-	Scan_odata[2 * index] = scan[2 * thid];			//write scan results to device memory
-	Scan_odata[2 * index + 1] = scan[2 * thid + 1];
-}
-
-__global__ void blockWise_sum(int *dev_temp,int *dev_scan,int * dev_bSum,int bSize)
-{
-	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-
-	int origIdx = (index + 1)*(bSize * 2) - 1;
-
-	dev_bSum[index] = dev_temp[origIdx] + dev_scan[origIdx];
-}
-
-void delete_PrintIntArray(int * array, int length,std::string name)
-{
-	printf("%s = \n[",name);
-	for (int i = 0; i < length; i++)
-	{
-		printf("%3d ", array[i]);
+	__syncthreads();
+	if (t == (blockDim.x - 1)) {
+		maxArray[blockIdx.x] = temp[2 * t + 1] + g_idata[2 * thid + 1];
 	}
-	printf("]\n");
-}
-__global__ void sum_scan_incre(int * dev_scan,int*dev_incre,int t,int bSize)
-{
-	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-	int incrIdx = index / (bSize * 2);
-	dev_scan[index] += dev_incre[incrIdx];
-}
-void ExclusiveScanTraverse(int * dev_inc, int&ttRayNum, int bSize, int *dev_temps)
-{
-	int halfTtlRays = (int)((ttRayNum + 1) / 2);
-	int GridSize = (halfTtlRays + bSize - 1) / bSize;
+	g_idata[2 * thid] = temp[2 * t];
+	//printf("(%i, %i) \n", thid, g_idata[2*thid]);
+	g_idata[2 * thid + 1] = temp[2 * t + 1];
 
-	if (GridSize == 1) //then start step 5
-	{
-		//dev_temps is dev_bIncre
-		scan_sharedMem << <GridSize, bSize, 2 * bSize*sizeof(int) >> >(dev_temps, dev_inc);
-		//scan_sharedMem << <GridSize, bSize, 2 * bSize*sizeof(int) >> >(dev_temps, dev_scan);
+}
+
+void scan(int n, const int *idata, int *odata, int newSize) {
+	int blockSize = 32;
+	int numBlocks = ceil((float)n / (float)blockSize);
+	int powTwo = 1 << ilog2ceil(n);
+	dim3 fullBlocksPerGrid(((powTwo / 2) + blockSize - 1) / blockSize);
+	int* maxArray;
+	int* newArray;
+	int randomNum = 0;
+	int* g_idata;
+	cudaMalloc((void**)&g_idata, powTwo * sizeof(int));
+	checkCUDAError("pathtrace");
+	cudaMalloc((void**)&newArray, powTwo * sizeof(int));
+	checkCUDAError("pathtrace");
+	cudaMemset(newArray, 0, powTwo * sizeof(int));
+	checkCUDAError("pathtrace");
+	newSize = n;
+	int* scanArray = new int[n];
+	//scanArray[0] = 0;
+	for (int i = 0; i < n; i++) {
+		scanArray[i] = idata[i];
+		//printf("bool %i: %i \n", i, scanArray[i]);
 	}
-	else
-	{
-		int *dev_scan;
-		cudaMalloc((void**)&dev_scan, sizeof(int)*ttRayNum);
-		scan_sharedMem << <GridSize, bSize, 2 * bSize*sizeof(int) >> >(dev_temps, dev_scan);
 
-		//int *dev_bSum;
-		//cudaMalloc((void**)&dev_bSum, sizeof(int)*GridSize);
-		blockWise_sum << <(int)((GridSize + bSize - 1) / bSize), bSize >> >(dev_temps, dev_scan, dev_bSum, bSize);
+	cudaMalloc((void**)&maxArray, (((powTwo / 2) + blockSize - 1) / blockSize)  * sizeof(int));
+	checkCUDAError("pathtrace");
+	cudaMemcpy(newArray, scanArray, n*sizeof(int), cudaMemcpyHostToDevice);
+	//printf("fullblocks: %i \n", ((powTwo/2) + blockSize - 1) / blockSize);
 
-		//int *dev_incre;
-		//cudaMalloc((void**)&dev_incre, sizeof(int)*GridSize);
-		ExclusiveScanTraverse(dev_inc, GridSize, bSize, dev_bSum);
+	cudaDeviceSynchronize();
+	checkCUDAError("pathtrace");
+	kernScan << <fullBlocksPerGrid, blockSize, 2 * blockSize*sizeof(int) >> >(maxArray, newArray, n);
+	checkCUDAError("pathtrace");
+	cudaDeviceSynchronize();
+	cudaMemcpy(odata, newArray, n*sizeof(int), cudaMemcpyDeviceToHost);
 
-		GridSize = (ttRayNum + bSize - 1) / bSize;
-		sum_scan_incre << <GridSize, bSize >> >(dev_scan, dev_inc, ttRayNum, bSize);
+	int maxSize = ((powTwo / 2) + blockSize - 1) / blockSize;
+	if (maxSize != 1) {
+		int* hst_maxArray = new int[maxSize];
+		int* scanMax = new int[maxSize];
+		int* dev_scanMax;
 
-		cudaMemcpy(dev_inc, dev_scan, sizeof(int)*ttRayNum, cudaMemcpyDeviceToDevice);
-		cudaFree(dev_scan);
-		//cudaFree(dev_incre);
+		cudaMalloc((void**)&dev_scanMax, maxSize*sizeof(int));
+
+		cudaMemcpy(hst_maxArray, maxArray, maxSize*sizeof(int), cudaMemcpyDeviceToHost);
+		//printf("%i ", hst_maxArray[maxSize - 1]);
+
+		scan(maxSize, hst_maxArray, scanMax, randomNum);
+		//cudaMemcpy(odata, g_idata, n*sizeof(int), cudaMemcpyDeviceToHost);
+
+		cudaMemcpy(dev_scanMax, scanMax, maxSize*sizeof(int), cudaMemcpyHostToDevice);
+		//kernCombine<<<fullBlocksPerGrid, blockSize>>>(dev_scanMax, g_idata, n);
+		//cudaMemcpy(odata, g_idata, n*sizeof(int), cudaMemcpyDeviceToHost);
+		cudaMemcpy(newArray, odata, n*sizeof(int), cudaMemcpyHostToDevice);
+		/*for (int i = 0; i < maxSize; i++) {
+		for (int j = blockSize*2*i; j < blockSize*2*(i+1)) {
+		odata[]
+		}
+		}*/
+		kernCombine << <fullBlocksPerGrid, blockSize * 2 >> >(dev_scanMax, newArray, n);
+		//checkCUDAError("pathtrace");
+		cudaMemcpy(odata, newArray, n*sizeof(int), cudaMemcpyDeviceToHost);
+		newSize = hst_maxArray[maxSize - 1];
+		cudaFree(dev_scanMax);
+	}
+
+
+
+	//printf(" don with function ");
+	cudaFree(maxArray);
+	cudaFree(g_idata);
+	cudaFree(newArray);
+	//checkCUDAError("pathtrace");
+}
+
+__global__ void kernScatter(int n, Ray *odata,
+	const Ray *idata, const int *bools, const int *indices) {
+	int thrId = threadIdx.x + (blockIdx.x * blockDim.x);
+	if (thrId < n) {
+		//printf("BOOLS: %i \n", bools[thrId]);
+		if (bools[thrId] == 1) {
+			//printf("old index: %i , new index: %i \n", thrId, indices[thrId]);
+
+			odata[indices[thrId]] = idata[thrId];
+			//printf("old ray index: %i, new ray index: %i \n", idata[thrId].index, odata[indices[thrId]].index);
+		}
 	}
 }
 
-__global__ void getUnterminatedTemp(Ray*ray,int*temp,int ttlRay)
-{
-	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-	//if (index < ttlRay)
-		temp[index] = ray[index].terminated ? 0 : 1;
-}
-
-__global__ void streamCmp_scatter(Ray*irays, Ray*orays, int*tempBool, int * scanResult,int totalNum)
-{
-	int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-	if (index >= totalNum) return;
-	if (!irays[index].terminated)
-	{
-		orays[scanResult[index]] = irays[index];
-	}
-}
-
+/**
+* Wrapper for the __global__ call that sets up the kernel calls and does a ton
+* of memory management
+*/
 void pathtrace(uchar4 *pbo, int frame, int iter) {
-    const int traceDepth = hst_scene->state.traceDepth;
-    const Camera &cam = hst_scene->state.camera;
-    const int pixelcount = cam.resolution.x * cam.resolution.y;
+	//printf("iter: %i \n", iter);
+	const int traceDepth = hst_scene->state.traceDepth;
+	const Camera &cam = hst_scene->state.camera;
+	const int pixelcount = cam.resolution.x * cam.resolution.y;
+	const Geom *geoms = &(hst_scene->geoms)[0];
+	Geom *m_blur_geoms = &(hst_scene->geoms)[0];
+	int numGeoms = hst_scene->geoms.size();
+	int numMats = hst_scene->materials.size();
+	Ray *rayArray = new Ray[pixelcount];
+	int max_iter = 1000; //hst_scene->state.iterations;
+	const int blockSideLength = 8;
+	const dim3 blockSize(blockSideLength, blockSideLength);
+	checkCUDAError("pathtrace");
+	const dim3 blocksPerGrid(
+		(cam.resolution.x + blockSize.x - 1) / blockSize.x,
+		(cam.resolution.y + blockSize.y - 1) / blockSize.y);
+	//const dim3 blocksPerGrid((pixelcount + blockSize - 1) / blockSize);
+	///////////////////////////////////////////////////////////////////////////
 
-    const dim3 blockSize2d(8, 8);
-    const dim3 blocksPerGrid2d(
-            (cam.resolution.x + blockSize2d.x - 1) / blockSize2d.x,
-            (cam.resolution.y + blockSize2d.y - 1) / blockSize2d.y);
+	// Recap:
+	// * Initialize array of path rays (using rays that come out of the camera)
+	//   * You can pass the Camera object to that kernel.
+	//   * Each path ray is a (ray, color) pair, where color starts as the
+	//     multiplicative identity, white = (1, 1, 1).
+	//   * For debugging, you can output your ray directions as colors.
+	// * For each depth:
+	//   * Compute one new (ray, color) pair along each path (using scatterRay).
+	//     Note that many rays will terminate by hitting a light or hitting
+	//     nothing at all. You'll have to decide how to represent your path rays
+	//     and how you'll mark terminated rays.
+	//     * Color is attenuated (multiplied) by reflections off of any object
+	//       surface.
+	//     * You can debug your ray-scene intersections by displaying various
+	//       values as colors, e.g., the first surface normal, the first bounced
+	//       ray direction, the first unlit material color, etc.
+	//   * Add all of the terminated rays' results into the appropriate pixels.
+	//   * Stream compact away all of the terminated paths.
+	//     You may use either your implementation or `thrust::remove_if` or its
+	//     cousins.
+	// * Finally, handle all of the paths that still haven't terminated.
+	//   (Easy way is to make them black or background-colored.)
 
-	//(1) Initialize array of path rays
-	kernInitPathRays <<<blocksPerGrid2d, blockSize2d >>>(cam, dev_rays, iter);
 
-	//(2) For each depth:
-	int geoNum = hst_scene->geoms.size();
-	int totalRays = cam.resolution.x*cam.resolution.y;
-	int why = totalRays;// totalRays;
-	thrust::default_random_engine rng = makeSeededRandomEngine(iter, 1, traceDepth);
-	bool raySel = true;
-	for (int i = 0; i < traceDepth; i++)
-	{
-		int bSize = 128; // blockSize.x*blockSize.y*blockSize.z;
-		dim3 fullBlocksPerGrid((totalRays + bSize - 1) / bSize);
-		// a. Compute one ray along each path
-		if (raySel)
-		{
-			kernComputeRay << <fullBlocksPerGrid, bSize >> >(totalRays, cam, dev_rays, dev_mats, dev_textures,dev_texInfo,dev_geoms, geoNum, iter, i);
-			// b. Add all terminated rays results into pixels
-			kernUpdateImage << <fullBlocksPerGrid, bSize >> >(totalRays, cam, dev_rays, dev_image);
-			// c. Stream compact away/thrust::remove_if all terminated paths.
+	// TODO: perform one iteration of path tracing
+	bool dof = false;
+	bool m_blur = false;
+	bool streamCompaction = true;
+	int size = pixelcount;
+
+	if (m_blur && iter < max_iter) {
+		for (int i = 0; i < numGeoms; i++) {
+
+			m_blur_geoms[i] = geoms[i];
+			m_blur_geoms[i].translation.x += geoms[i].move.x / (float)max_iter;
+			m_blur_geoms[i].translation.y += geoms[i].move.y / (float)max_iter;
+			m_blur_geoms[i].translation.z += geoms[i].move.z / (float)max_iter;
+			m_blur_geoms[i].transform = utilityCore::buildTransformationMatrix(m_blur_geoms[i].translation, m_blur_geoms[i].rotation, m_blur_geoms[i].scale);
+			m_blur_geoms[i].inverseTransform = glm::inverse(m_blur_geoms[i].transform);
+			m_blur_geoms[i].invTranspose = glm::inverseTranspose(m_blur_geoms[i].transform);
+			//printf("(%f, %f, %f)", m_blur_geoms[i].translation.x, m_blur_geoms[i].translation.y, m_blur_geoms[i].translation.z);
 		}
-		else
-		{
-			kernComputeRay << <fullBlocksPerGrid, bSize >> >(totalRays, cam, dev_rays_temp, dev_mats,dev_textures,dev_texInfo, dev_geoms, geoNum, iter, i);
-			// b. Add all terminated rays results into pixels
-			kernUpdateImage << <fullBlocksPerGrid, bSize >> >(totalRays, cam, dev_rays_temp, dev_image);
-			// c. Stream compact away/thrust::remove_if all terminated paths.
+		cudaMemcpy(dev_geoms, m_blur_geoms, hst_scene->geoms.size() * sizeof(Geom), cudaMemcpyHostToDevice);
+		checkCUDAError("pathtrace");
+	}
+	else {
+		cudaMemcpy(dev_geoms, geoms, hst_scene->geoms.size() * sizeof(Geom), cudaMemcpyHostToDevice);
+	}
+	checkCUDAError("pathtrace");
+	int newSize = pixelcount;
+	//printf("Heyo starting over \n newSize: %i \n", newSize);
+	Ray* dev_rayShort;
+	cudaMalloc((void**)&dev_rayShort, pixelcount * sizeof(Ray));
+	checkCUDAError("pathtrace");
+	cudaMalloc((void**)&dev_rayArray, pixelcount * sizeof(Ray));
+	checkCUDAError("pathtrace");
+	kernRayGenerate << <blocksPerGrid, blockSize >> >(cam, dev_rayArray, iter, dof);
+	checkCUDAError("pathtrace");
+	//cuda events
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	cudaEventRecord(start);
+	checkCUDAError("pathtrace");
+	for (int i = 0; i < traceDepth + 1; i++) {
+
+		int* hst_bool = new int[newSize];
+		int* dev_bool;
+		int* dev_indices;
+		int* hst_indices = new int[newSize];
+		int blockSizeNew = 64;
+		dim3 blocksGridNew((newSize + blockSizeNew - 1) / blockSizeNew);
+		checkCUDAError("pathtrace");
+		//printf("BlocksPerGrid: %i \n", (newSize + blockSizeNew - 1) / blockSizeNew);
+		if (newSize == 0) {
+			cudaEventRecord(stop);
+			break;
 		}
-		
-		if (doStreamCompact)
-		{
-			int ttRayNum = why;
-			if (ttRayNum == 0) continue;
-			
-			bSize = 64;
-			
-			int GridSize = (ttRayNum + bSize - 1) / bSize;
-			
-			//int *hst_temp = new int[ttRayNum];
-			/*for (int i = 0; i < ttRayNum; i++)
-			{
-				thrust::uniform_real_distribution<float> u01(0, 1);
-				
-				if (u01(rng)>0.5)
-				{
-					hst_temp[i] = 1;
+		//printf("size: %i \n", newSize);
+		kernPathTracer << <blocksGridNew, blockSizeNew >> >(cam, dev_rayArray, dev_geoms, dev_mats, numGeoms, numMats, dev_image, iter, i, traceDepth, m_blur, newSize);
+		checkCUDAError("pathtrace");
+		cudaMemcpy(rayArray, dev_rayArray, pixelcount*sizeof(Ray), cudaMemcpyDeviceToHost);
+		checkCUDAError("pathtrace");
+		if (streamCompaction) {
+			for (int m = 0; m < newSize; m++) {
+
+				if (rayArray[m].terminated) {
+					hst_bool[m] = 0;
 				}
-				else hst_temp[i] = 0;
-				
+				else {
+					hst_bool[m] = 1;
+				}
 			}
-			*/
-			//printf("\n\n/******* Test *******/\n");
-			if (raySel)
-				getUnterminatedTemp << <GridSize, bSize >> >(dev_rays, dev_temps, ttRayNum);
-			else
-				getUnterminatedTemp << <GridSize, bSize >> >(dev_rays_temp, dev_temps, ttRayNum);
-			
-			//cudaMemcpy(dev_temps, hst_temp, sizeof(int)*ttRayNum, cudaMemcpyHostToDevice);
-			//cudaMemcpy( hst_temp,dev_temps, sizeof(int)*ttRayNum, cudaMemcpyDeviceToHost);
-			//delete_PrintIntArray(hst_temp, ttRayNum, "1. original");		//dev_temp
-			int lastInOrig;
-			cudaMemcpy(&lastInOrig, dev_temps + ttRayNum - 1, sizeof(int), cudaMemcpyDeviceToHost);
-			//printf("lastInOrig:%d\n", lastInOrig);
-			//int *dev_temps_thrust;
-			//cudaMalloc((void**)&dev_temps_thrust, sizeof(int)*ttRayNum);
-			//getUnterminatedTemp << <GridSize, bSize >> >(dev_rays, dev_temps_thrust, ttRayNum);
-			//cudaMemcpy(dev_temps_thrust, hst_temp, sizeof(int)*ttRayNum, cudaMemcpyHostToDevice);
+			int oldSize = newSize;
+			if (newSize > 1) {
+				scan(oldSize, hst_bool, hst_indices, newSize);
 
-			//printf("before scatter totalNum: %d\n", ttRayNum);
-			ExclusiveScanTraverse(dev_incre,ttRayNum, bSize, dev_temps);
-			checkCUDAError("ExclusiveScanTraverse");
-			/*
-			thrust::device_ptr<int> RayStart(dev_temps_thrust);
-			thrust::device_ptr<int> newRayEnd = RayStart + ttRayNum;
-			newRayEnd = thrust::remove_if(RayStart, newRayEnd, testdelete());
-			int thrustTT = (int)(newRayEnd - RayStart);
-			*/
-			checkCUDAError("bbb");
-			int lastInScan;
-			cudaMemcpy(&lastInScan, dev_incre + ttRayNum - 1, sizeof(int), cudaMemcpyDeviceToHost);
-			/*
-			//thrust::remove_if stream compact:
-			thrust::device_ptr<Ray> RayStart(dev_rays);
-			thrust::device_ptr<Ray> newRayEnd = RayStart + ttRayNum;
-			newRayEnd = thrust::remove_if(RayStart, newRayEnd, is_terminated());
-			int thrustTT = (int)(newRayEnd - RayStart);
-			*/
-			ttRayNum = lastInScan + lastInOrig;
-			int thrustTT = 0;
-			//printf("after scatter totalNum: %d,\t thrust: %d\n\n", ttRayNum,thrustTT);
-			//why = ttRayNum;
-			//totalRays = ttRayNum;
-			//Ray * dev_rays_tempt;
-			//cudaMalloc((void**)&dev_rays_tempt, sizeof(Ray)*why);
-			if (raySel)
-				streamCmp_scatter << <GridSize, bSize >> >(dev_rays, dev_rays_temp, dev_temps, dev_incre, why);
-			else
-				streamCmp_scatter << <GridSize, bSize >> >(dev_rays_temp, dev_rays, dev_temps, dev_incre, why);
+				newSize = hst_bool[oldSize - 1] + hst_indices[oldSize - 1];
 
-			raySel = !raySel;
-			//printf("");	
-			//cudaMemcpy( hst_temp, dev_incre,sizeof(int)*ttRayNum, cudaMemcpyDeviceToHost);
-			//delete_PrintIntArray(hst_temp, ttRayNum, "final. scan");		//dev_temp
-			//printf("Before Stream Compaction: %d rays\t,",why);
-			why = ttRayNum;
-			//printf("After Stream Compaction: %d rays\t\n", why);
-			totalRays = why;
+				cudaMalloc((void**)&dev_bool, oldSize * sizeof(int));
+				cudaMalloc((void**)&dev_indices, oldSize * sizeof(int));
+
+
+
+				cudaMemcpy(dev_bool, hst_bool, oldSize*sizeof(int), cudaMemcpyHostToDevice);
+				cudaMemcpy(dev_indices, hst_indices, oldSize*sizeof(int), cudaMemcpyHostToDevice);
+				checkCUDAError("pathtrace");
+				//printf("%i, %i, %i \n", oldSize, blocksGridNew, blockSizeNew);
+				kernScatter << <blocksGridNew, blockSizeNew >> >(oldSize, dev_rayShort, dev_rayArray, dev_bool, dev_indices);
+				checkCUDAError("pathtrace");
+				//printf("newSize: %i \n", newSize);
+				//cudaMemcpy(rayArray, dev_rayShort, newSize*sizeof(Ray), cudaMemcpyDeviceToHost);
+
+				cudaMemcpy(dev_rayArray, dev_rayShort, newSize*sizeof(Ray), cudaMemcpyDeviceToDevice);
+				checkCUDAError("pathtrace");
+				cudaFree(dev_bool);
+				cudaFree(dev_indices);
+
+			}
+
+			int k;
+			//std::cin >> k;
 		}
-	}
-	//(3) Handle all not terminated
-	int bSize = 128;// blockSize.x*blockSize.y*blockSize.z;
-	dim3 fullBlocksPerGrid((totalRays + bSize - 1) / bSize);
-	if (raySel)
-	{
-		kernFinalImage << <fullBlocksPerGrid, bSize >> >(iter, totalRays,dev_textures,  cam, dev_rays, dev_image, dev_texInfo,dev_geoms, dev_mats,dev_lightIdxs, geoNum, ttlLights);
-	}
-	else
-	{
-		kernFinalImage << <fullBlocksPerGrid, bSize >> >(iter, totalRays,dev_textures, cam, dev_rays_temp, dev_image, dev_texInfo,dev_geoms, dev_mats, dev_lightIdxs, geoNum, ttlLights);
-	}
-	
 
-    // Send results to OpenGL buffer for rendering
-    sendImageToPBO<<<blocksPerGrid2d, blockSize2d>>>(pbo, cam.resolution, iter, dev_image);
 
-    // Retrieve image from GPU
-    cudaMemcpy(hst_scene->state.image.data(), dev_image,
-            pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+	}
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+	//printf("time per iteration: %f \n", milliseconds);
 
-    checkCUDAError("pathtrace");
+
+	checkCUDAError("pathtrace");
+
+	cudaMemcpy(rayArray, dev_rayArray, pixelcount*sizeof(Ray), cudaMemcpyDeviceToHost);
+	checkCUDAError("pathtrace");
+	sendImageToPBO << <blocksPerGrid, blockSize >> >(pbo, cam.resolution, iter, dev_image);
+	checkCUDAError("pathtrace");
+	// Retrieve image from GPU
+	cudaMemcpy(hst_scene->state.image.data(), dev_image,
+		pixelcount * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+	cudaFree(dev_rayShort);
+	cudaFree(dev_rayArray);
+	checkCUDAError("pathtrace");
 }

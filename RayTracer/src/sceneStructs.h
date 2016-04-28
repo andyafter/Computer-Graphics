@@ -13,10 +13,13 @@ enum GeomType {
 struct Ray {
     glm::vec3 origin;
     glm::vec3 direction;
-	glm::vec2 pixelIndex;
-	int imageIndex;
-	bool terminated = false;
+	glm::vec3 color;
 	glm::vec3 carry = glm::vec3(1, 1, 1);
+	int index;
+	bool terminated;
+	int geomid;
+	bool out;
+	float time;
 	int origMatIdx = -1;
 	int lastObjIdx = -1;
 };
@@ -30,6 +33,7 @@ struct Geom {
     glm::mat4 transform;
     glm::mat4 inverseTransform;
     glm::mat4 invTranspose;
+	glm::vec3 move;
 };
 
 struct Material {
@@ -43,7 +47,6 @@ struct Material {
     float indexOfRefraction;
     float emittance;
 	float bssrdf;
-	int TexIdx;
 };
 
 struct Camera {

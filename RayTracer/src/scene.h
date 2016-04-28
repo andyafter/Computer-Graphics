@@ -7,7 +7,6 @@
 #include "glm/glm.hpp"
 #include "utilities.h"
 #include "sceneStructs.h"
-#include "image.h"
 
 using namespace std;
 
@@ -21,10 +20,7 @@ public:
     Scene(string filename);
     ~Scene();
 
-	int lightIdx = 0;//??? multilight
-	std::vector<int> lightIdxs;
     std::vector<Geom> geoms;
     std::vector<Material> materials;
-	std::vector<image> textures;
     RenderState state;
 };
